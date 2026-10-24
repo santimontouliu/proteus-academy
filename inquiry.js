@@ -1,81 +1,45 @@
 'use strict';
 
-// Only a positive service acknowledgment counts as accepted; inbox delivery is not asserted.
-async function deliverInquiry(endpoint, payload, options = {}) {
-  const request = options.fetchImpl || fetch;
-  const response = await request(endpoint, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-    body: JSON.stringify(payload),
-    signal: options.signal,
-    credentials: 'omit',
-    referrerPolicy: 'strict-origin-when-cross-origin'
-  });
-  if (!response.ok) throw new Error('service-rejected');
-  const result = await response.json();
-  if (!result || (result.success !== true && result.success !== 'true')) {
-    throw new Error('service-rejected');
-  }
-  const needsActivation = typeof result.message === 'string' &&
-    /activat|confirm.{0,25}(?:email|address)|check.{0,25}(?:email|inbox)/i.test(result.message);
-  return needsActivation ? 'activation-required' : 'accepted';
+// Prepare an email locally. Opening a mailto link does not send a message.
+function buildInquiryEmail(fields) {
+  const value = key => String(fields[key] || '').trim();
+  const body = [
+    'Hello Proteus Academy,',
+    '',
+    'I would like to discuss academic support.',
+    '',
+    `Name: ${value('name')}`,
+    `Contact email: ${value('email')}`,
+    `I am a: ${value('role')}`,
+    `Pathway: ${value('pathway')}`,
+    `Interested in: ${value('interest')}`,
+    '',
+    'My goals:',
+    value('goals'),
+    '',
+    'Thank you.'
+  ].join('\r\n');
+  return 'mailto:contact@useproteus.io?subject=' +
+    encodeURIComponent('Proteus Academy — Academic inquiry') +
+    '&body=' + encodeURIComponent(body);
 }
 
 const inquiryForm = document.querySelector('#inquiry-form');
 if (inquiryForm) {
-  let sending = false;
-  const status = document.querySelector('#form-status');
-  const submitButton = inquiryForm.querySelector('button[type="submit"]');
-  const originalLabel = submitButton.innerHTML;
-  const showStatus = (message, state) => {
-    status.textContent = message;
-    status.dataset.state = state;
-    status.focus({preventScroll: true});
-  };
-  inquiryForm.addEventListener('submit', async event => {
+  inquiryForm.addEventListener('submit', event => {
     event.preventDefault();
-    if (sending || !inquiryForm.reportValidity()) return;
-    const data = new FormData(inquiryForm);
-    // A filled honeypot is not reported as a delivered message.
-    if (String(data.get('_honey') || '').trim()) {
-      showStatus('This inquiry could not be submitted. Please email contact@useproteus.io directly.', 'error');
+    if (!inquiryForm.reportValidity()) return;
+    const fields = Object.fromEntries(new FormData(inquiryForm).entries());
+    const status = document.querySelector('#form-status');
+    if (!String(fields.name || '').trim() || !String(fields.goals || '').trim()) {
+      status.textContent = 'Please enter your name and learning goals before preparing the email.';
+      status.dataset.state = 'error';
+      status.focus({preventScroll:true});
       return;
     }
-    const payload = Object.fromEntries(data.entries());
-    payload.name = String(payload.name || '').trim();
-    payload.email = String(payload.email || '').trim();
-    payload.goals = String(payload.goals || '').trim();
-    if (!payload.name || !payload.email || !payload.goals) {
-      showStatus('Please enter your name, email, and learning goals before sending.', 'error');
-      return;
-    }
-    payload._url = location.origin + location.pathname;
-    const endpoint = inquiryForm.action.replace('https://formsubmit.co/', 'https://formsubmit.co/ajax/');
-    sending = true;
-    submitButton.disabled = true;
-    submitButton.textContent = 'Sending…';
-    inquiryForm.setAttribute('aria-busy', 'true');
-    status.textContent = 'Sending your inquiry securely…';
-    status.dataset.state = 'pending';
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-    try {
-      const outcome = await deliverInquiry(endpoint, payload, {signal: controller.signal});
-      if (outcome === 'activation-required') {
-        showStatus('The email service requires academy activation before forwarding inquiries. Your details are still here. Please email contact@useproteus.io directly for now.', 'error');
-      } else {
-        showStatus('Your inquiry has been accepted for forwarding to contact@useproteus.io. This does not confirm a consultation or enrollment. If you do not hear back, please email us directly.', 'success');
-        inquiryForm.reset();
-      }
-    } catch {
-      // A timeout can happen after the service accepted a request. Never retry automatically.
-      showStatus('We could not confirm that your inquiry was accepted. Your details are still here. Please email contact@useproteus.io directly; if you try again, a duplicate may be sent.', 'error');
-    } finally {
-      clearTimeout(timeout);
-      sending = false;
-      submitButton.disabled = false;
-      submitButton.innerHTML = originalLabel;
-      inquiryForm.removeAttribute('aria-busy');
-    }
+    status.textContent = 'Your email app should open with a prepared draft. Review it and click Send there. Nothing has been sent by this website. If no app opens, use the email link below or copy these details into your webmail.';
+    status.dataset.state = 'ready';
+    // Keep the entries visible in case no mail application is configured.
+    window.location.href = buildInquiryEmail(fields);
   });
 }
