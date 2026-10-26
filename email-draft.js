@@ -4,7 +4,7 @@
 function buildInquiryEmail(fields) {
   const value = key => String(fields[key] || '').trim();
   const body = [
-    'Hello Proteus Academy,',
+    'Hello Delos Academy,',
     '',
     'I would like to discuss academic support.',
     '',
@@ -20,7 +20,7 @@ function buildInquiryEmail(fields) {
     'Thank you.'
   ].join('\r\n');
   return 'mailto:contact@useproteus.io?subject=' +
-    encodeURIComponent('Proteus Academy — Academic inquiry') +
+    encodeURIComponent('Delos Academy — Academic inquiry') +
     '&body=' + encodeURIComponent(body);
 }
 
